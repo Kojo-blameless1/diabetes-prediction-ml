@@ -1,10 +1,11 @@
 # ============================================
 # INTERACTIVE DIABETES PREDICTION
-# SIMPLIFIED VERSION - NO SCALER REQUIRED
+# USING SAVED MODEL ONLY
 # ============================================
 
 import joblib
 import pandas as pd
+import numpy as np
 import os
 from pathlib import Path
 
@@ -13,28 +14,17 @@ print("🩺 DIABETES RISK ASSESSMENT TOOL")
 print("="*70)
 
 # ============================================
-# LET USER SPECIFY MODEL PATH
+# LOAD THE SAVED MODEL
 # ============================================
 
-print("\n📂 MODEL SELECTION")
+print("\n📂 LOADING MODEL")
 print("-" * 40)
-print("Enter the path to your trained model file")
-print("(Press Enter to use default location)")
 
-# Default path - YOU CAN CHANGE THIS
-model_path = Path(r"C:\Users\USER\Desktop\Machine Learning\diabetes-prediction-ml\model\decisionTree.joblib")
+# Path to your saved model - UPDATE THIS PATH
+model_path = Path(r"C:\Users\USER\Desktop\Machine Learning\diabetes-prediction-ml\model\random_forest_model.pkl")
 
-user_path = input(f"\nModel path [{model_path}]: ").strip()
+print(f"Looking for model at: {model_path}")
 
-# Use user input or default
-if user_path:
-    model_path = Path(user_path)
-else:
-    model_path = Path(model_path)
-
-print(f"\n🔍 Looking for model at: {model_path}")
-
-# Load the model
 if os.path.exists(model_path):
     try:
         model = joblib.load(model_path)
@@ -48,18 +38,105 @@ else:
     print("\nPlease check:")
     print("1. Is the path correct?")
     print("2. Does the file exist?")
-    print("3. Try using the full absolute path")
+    print("3. Try updating the path above")
     exit()
-
-# ============================================
-# NO SCALER - Using raw values directly
-# ============================================
-
-print("\n⚙️  Prediction engine ready (using raw values - no scaling)")
 
 # Feature names in correct order
 FEATURES = ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
             'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age']
+
+# ============================================
+# PREDICTION FUNCTION
+# ============================================
+
+def predict_diabetes(patient_data):
+    """Make prediction using the loaded model"""
+    
+    # Convert to DataFrame with correct feature order
+    patient_df = pd.DataFrame([patient_data])[FEATURES]
+    
+    # Make prediction
+    prediction = model.predict(patient_df)[0]
+    
+    # Get probability if available
+    try:
+        probabilities = model.predict_proba(patient_df)[0]
+        has_proba = True
+    except (AttributeError, NotImplementedError):
+        probabilities = [0.5, 0.5]
+        has_proba = False
+    
+    return prediction, probabilities, has_proba
+
+# ============================================
+# RISK ASSESSMENT FUNCTIONS
+# ============================================
+
+def assess_risk_factors(patient_data):
+    """Identify key risk factors"""
+    risk_factors = []
+    
+    # Glucose risk
+    if patient_data['Glucose'] > 140:
+        risk_factors.append(f"🔴 High glucose ({patient_data['Glucose']} mg/dL) - Above diabetic threshold")
+    elif patient_data['Glucose'] > 125:
+        risk_factors.append(f"🟠 Elevated glucose ({patient_data['Glucose']} mg/dL) - Diabetic range")
+    elif patient_data['Glucose'] > 99:
+        risk_factors.append(f"🟡 Elevated glucose ({patient_data['Glucose']} mg/dL) - Prediabetic range")
+    
+    # BMI risk
+    if patient_data['BMI'] > 30:
+        risk_factors.append(f"🔴 Obese BMI ({patient_data['BMI']:.1f}) - Major risk factor")
+    elif patient_data['BMI'] > 25:
+        risk_factors.append(f"🟠 Overweight BMI ({patient_data['BMI']:.1f}) - Moderate risk factor")
+    
+    # Age risk
+    if patient_data['Age'] > 45:
+        risk_factors.append(f"🟡 Age ({patient_data['Age']} years) - Risk increases with age")
+    
+    # Blood pressure risk
+    if patient_data['BloodPressure'] > 80:
+        risk_factors.append(f"🟡 Elevated blood pressure ({patient_data['BloodPressure']})")
+    
+    # Insulin risk
+    if patient_data['Insulin'] > 166:
+        risk_factors.append(f"🟡 High insulin ({patient_data['Insulin']})")
+    
+    # Genetic risk
+    if patient_data['DiabetesPedigreeFunction'] > 1.0:
+        risk_factors.append(f"🟡 High genetic risk factor ({patient_data['DiabetesPedigreeFunction']:.2f})")
+    
+    return risk_factors
+
+def get_recommendations(prediction, probability, risk_factors):
+    """Generate personalized recommendations"""
+    recommendations = []
+    
+    if prediction == 1 or probability > 0.5:
+        recommendations.append("🏥 Schedule an appointment with your doctor")
+        recommendations.append("💉 Get a proper fasting blood glucose test")
+        recommendations.append("📋 Discuss diabetes management options")
+        
+        if probability > 0.7:
+            recommendations.append("⚠️ Seek medical attention promptly")
+    else:
+        recommendations.append("✅ Continue regular health check-ups")
+        recommendations.append("🏃 Exercise regularly (150 min/week)")
+        recommendations.append("🥗 Eat a balanced diet low in sugar")
+        
+        if probability > 0.3:
+            recommendations.append("👀 Monitor your blood glucose regularly")
+    
+    # Add specific recommendations based on risk factors
+    for factor in risk_factors[:2]:  # Add top risk factors
+        if "Glucose" in factor:
+            recommendations.append("🍬 Reduce sugar and carbohydrate intake")
+        elif "BMI" in factor:
+            recommendations.append("⚖️ Consider weight management program")
+        elif "Blood Pressure" in factor:
+            recommendations.append("❤️ Monitor your blood pressure regularly")
+    
+    return recommendations
 
 # ============================================
 # USER INPUT FUNCTIONS
@@ -81,7 +158,7 @@ def get_user_input():
     print("   • Enter 0 if male or never pregnant")
     while True:
         try:
-            val = input("   Number of pregnancies [0]: ") or "0"
+            val = input("   Number of pregnancies [2]: ") or "2"
             patient['Pregnancies'] = int(val)
             if patient['Pregnancies'] >= 0:
                 break
@@ -190,29 +267,6 @@ def get_user_input():
     return patient
 
 # ============================================
-# PREDICTION FUNCTION (NO SCALING)
-# ============================================
-
-def predict_diabetes(patient_data):
-    """Make prediction using raw values (no scaling)"""
-    
-    # Convert to DataFrame with correct feature order
-    patient_df = pd.DataFrame([patient_data])[FEATURES]
-    
-    # Make prediction
-    prediction = model.predict(patient_df)[0]
-    
-    # Get probability if available
-    try:
-        probabilities = model.predict_proba(patient_df)[0]
-        has_proba = True
-    except (AttributeError, NotImplementedError):
-        probabilities = [0.5, 0.5]
-        has_proba = False
-    
-    return prediction, probabilities, has_proba
-
-# ============================================
 # RESULTS DISPLAY
 # ============================================
 
@@ -227,7 +281,8 @@ def display_results(patient_data, prediction, probabilities, has_proba):
     print("\n📋 Your Information Summary:")
     print("-" * 50)
     for key, value in patient_data.items():
-        print(f"   {key:25}: {value}")
+        unit = "mg/dL" if key == "Glucose" else "mm Hg" if key == "BloodPressure" else "mm" if key == "SkinThickness" else "mu U/ml" if key == "Insulin" else "kg/m²" if key == "BMI" else "" if key == "DiabetesPedigreeFunction" else "years" if key == "Age" else ""
+        print(f"   {key:25}: {value} {unit}")
     
     # Risk assessment
     print("\n" + "="*50)
@@ -244,7 +299,7 @@ def display_results(patient_data, prediction, probabilities, has_proba):
         
         # Risk category
         if risk_percentage >= 70:
-            print("\n   🟥 HIGH RISK")
+            print("\n   🔴 HIGH RISK")
             print("   • You show strong indicators of diabetes")
             print("   • Please consult a healthcare provider promptly")
         elif risk_percentage >= 50:
@@ -268,25 +323,10 @@ def display_results(patient_data, prediction, probabilities, has_proba):
     
     # Key risk factors
     print("\n" + "="*50)
-    print("⚠️  KEY RISK FACTORS TO MONITOR")
+    print("⚠️  KEY RISK FACTORS IDENTIFIED")
     print("="*50)
     
-    risk_factors = []
-    if patient_data['Glucose'] > 126:
-        risk_factors.append(f"• High glucose ({patient_data['Glucose']} mg/dL) - Above diabetic threshold")
-    elif patient_data['Glucose'] > 100:
-        risk_factors.append(f"• Elevated glucose ({patient_data['Glucose']} mg/dL) - Prediabetic range")
-    
-    if patient_data['BMI'] > 30:
-        risk_factors.append(f"• Obese BMI ({patient_data['BMI']:.1f}) - Major risk factor")
-    elif patient_data['BMI'] > 25:
-        risk_factors.append(f"• Overweight BMI ({patient_data['BMI']:.1f}) - Moderate risk factor")
-    
-    if patient_data['Age'] > 45:
-        risk_factors.append(f"• Age ({patient_data['Age']} years) - Risk increases with age")
-    
-    if patient_data['BloodPressure'] > 80:
-        risk_factors.append(f"• Elevated blood pressure ({patient_data['BloodPressure']})")
+    risk_factors = assess_risk_factors(patient_data)
     
     if risk_factors:
         for factor in risk_factors:
@@ -296,51 +336,53 @@ def display_results(patient_data, prediction, probabilities, has_proba):
     
     # Recommendations
     print("\n" + "="*50)
-    print("💡 RECOMMENDATIONS")
+    print("💡 PERSONALIZED RECOMMENDATIONS")
     print("="*50)
     
-    if prediction == 1 or (has_proba and probabilities[1] > 0.5):
-        print("• Schedule an appointment with your doctor")
-        print("• Get a proper fasting blood glucose test")
-        print("• Discuss lifestyle modifications")
-    else:
-        print("• Maintain regular health check-ups")
-        print("• Exercise regularly (150 min/week)")
-        print("• Eat a balanced diet low in sugar")
-        print("• Monitor your weight")
+    recommendations = get_recommendations(prediction, probabilities[1] if has_proba else prediction, risk_factors)
     
+    for rec in recommendations:
+        print(rec)
+    
+    # Disclaimer
     print("\n" + "="*50)
     print("⚠️  IMPORTANT DISCLAIMER")
     print("="*50)
     print("This is a screening tool only, not a medical diagnosis.")
     print("Always consult with a healthcare professional for proper evaluation.")
 
-def display_risk_info():
-    """Show educational information about risk factors"""
+def display_health_info():
+    """Show educational information about health metrics"""
     print("\n" + "="*60)
-    print("📚 UNDERSTANDING YOUR RISK FACTORS")
+    print("📚 UNDERSTANDING YOUR HEALTH METRICS")
     print("="*60)
     print("""
-GLUCOSE:
-   • Normal: <100 mg/dL
-   • Prediabetes: 100-125 mg/dL
-   • Diabetes: ≥126 mg/dL
+GLUCOSE (mg/dL):
+   • Normal:        < 100
+   • Prediabetes:   100 - 125
+   • Diabetes:      126+
 
-BMI:
-   • Normal: 18.5-24.9
-   • Overweight: 25-29.9
-   • Obese: ≥30
+BMI (kg/m²):
+   • Underweight:   < 18.5
+   • Normal:        18.5 - 24.9
+   • Overweight:    25 - 29.9
+   • Obese:         30+
 
-BLOOD PRESSURE:
-   • Normal: <80 mm Hg
-   • Elevated: 80-89 mm Hg
-   • High: ≥90 mm Hg
+BLOOD PRESSURE (mm Hg):
+   • Normal:        < 80
+   • Elevated:      80 - 89
+   • High:          90+
+
+INSULIN (mu U/ml):
+   • Normal:        16 - 166
+
+DIABETES PEDIGREE FUNCTION:
+   • Low risk:      0.0 - 0.5
+   • Moderate:      0.5 - 1.0
+   • High risk:     1.0+
 
 AGE:
-   • Risk increases significantly after 45
-
-FAMILY HISTORY:
-   • Higher Diabetes Pedigree Function = higher genetic risk
+   • Risk increases significantly after age 45
     """)
 
 # ============================================
@@ -354,17 +396,17 @@ def main():
         print("\n" + "="*70)
         print("🏥 DIABETES RISK PREDICTION TOOL")
         print("="*70)
-        print("\n1. Start new assessment")
-        print("2. View risk factor information")
+        print("\n1. Start new assessment (manual entry)")
+        print("2. View health information")
         print("3. Exit")
         
         choice = input("\nSelect option (1-3): ").strip()
         
         if choice == '1':
-            # Get user input
+            # Manual entry
             patient = get_user_input()
             
-            # Make prediction (no scaling needed)
+            # Make prediction
             prediction, probabilities, has_proba = predict_diabetes(patient)
             
             # Show results
@@ -373,7 +415,7 @@ def main():
             input("\nPress Enter to continue...")
             
         elif choice == '2':
-            display_risk_info()
+            display_health_info()
             input("\nPress Enter to continue...")
             
         elif choice == '3':
